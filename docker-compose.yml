@@ -1,0 +1,47 @@
+services:
+  postgres:
+    # Образ postgres с предустановленным расширением pgvector.
+    image: pgvector/pgvector:pg17
+    container_name: m_agent_postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=ragdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - agent-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ragdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  agent:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: m_agent_app
+    env_file:
+      - .env
+    environment:
+      # Внутри сети Docker Postgres доступен по имени сервиса, а не localhost.
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/ragdb?sslmode=disable
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - agent-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  agent-network:
+    driver: bridge

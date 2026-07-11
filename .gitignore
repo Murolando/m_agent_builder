@@ -1,0 +1,6 @@
+# Local env / secrets
+.env
+
+# Go build artifacts
+/agent
+*.out
