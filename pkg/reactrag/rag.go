@@ -77,6 +77,8 @@ func (r *RAG) NeedsSeeding(ctx context.Context) (bool, error) {
 }
 
 // Ingest чанкит документы и загружает их в pgvector. Возвращает число чанков.
+// Подходит для длинного текста (статьи, база знаний): длинный документ режется
+// на куски, чтобы поиск попадал в релевантный фрагмент, а не в весь документ.
 func (r *RAG) Ingest(ctx context.Context, docs []schema.Document) (int, error) {
 	splitter := textsplitter.NewRecursiveCharacter()
 	splitter.ChunkSize = 300
@@ -86,11 +88,24 @@ func (r *RAG) Ingest(ctx context.Context, docs []schema.Document) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("split documents: %w", err)
 	}
+	return r.ingestDocuments(ctx, chunks)
+}
 
-	if _, err := r.store.AddDocuments(ctx, chunks); err != nil {
+// IngestRaw загружает документы в pgvector как есть, без чанкинга: один документ —
+// один вектор. Подходит для коротких самодостаточных записей (товары, карточки,
+// FAQ-пары), где дробление размазало бы одну сущность на несколько строк выдачи.
+// Возвращает число записанных документов.
+func (r *RAG) IngestRaw(ctx context.Context, docs []schema.Document) (int, error) {
+	return r.ingestDocuments(ctx, docs)
+}
+
+// ingestDocuments — общая запись готовых документов в стор (без дополнительной
+// обработки). Используется и Ingest (после чанкинга), и IngestRaw (как есть).
+func (r *RAG) ingestDocuments(ctx context.Context, docs []schema.Document) (int, error) {
+	if _, err := r.store.AddDocuments(ctx, docs); err != nil {
 		return 0, fmt.Errorf("add documents to pgvector: %w", err)
 	}
-	return len(chunks), nil
+	return len(docs), nil
 }
 
 // Search выполняет семантический поиск и форматирует найденное в текстовый
