@@ -28,10 +28,24 @@ type ReActAgent struct {
 	toolList []tools.Tool
 	maxSteps int
 	verbose  bool
+	// instructions — кастомная «шапка» ReAct-промпта (роль и правила поведения).
+	// Пустая строка → reactrag.DefaultInstructions. Переопределить можно только
+	// инструкции; фиксированный формат Thought/Action/Observation — нет.
+	instructions string
+}
+
+// Option настраивает ReActAgent при создании. Функциональные опции позволяют
+// расширять конфигурацию, не ломая существующие вызовы NewReActAgent.
+type Option func(*ReActAgent)
+
+// WithInstructions задаёт свою «шапку» промпта (роль и правила) вместо
+// reactrag.DefaultInstructions. Пустая строка оставляет дефолт.
+func WithInstructions(instructions string) Option {
+	return func(a *ReActAgent) { a.instructions = instructions }
 }
 
 // NewReActAgent создаёт агента поверх модели и набора инструментов.
-func NewReActAgent(llm llms.Model, agentTools []tools.Tool, maxSteps int, verbose bool) *ReActAgent {
+func NewReActAgent(llm llms.Model, agentTools []tools.Tool, maxSteps int, verbose bool, opts ...Option) *ReActAgent {
 	toolMap := make(map[string]tools.Tool, len(agentTools))
 	for _, t := range agentTools {
 		toolMap[t.Name()] = t
@@ -39,13 +53,17 @@ func NewReActAgent(llm llms.Model, agentTools []tools.Tool, maxSteps int, verbos
 	if maxSteps <= 0 {
 		maxSteps = 5
 	}
-	return &ReActAgent{
+	a := &ReActAgent{
 		llm:      llm,
 		tools:    toolMap,
 		toolList: agentTools,
 		maxSteps: maxSteps,
 		verbose:  verbose,
 	}
+	for _, opt := range opts {
+		opt(a)
+	}
+	return a
 }
 
 // Run выполняет ReAct-цикл и возвращает финальный ответ вместе с трейсом шагов.
@@ -55,7 +73,7 @@ func (a *ReActAgent) Run(ctx context.Context, question string) (answer string, s
 	for step := 0; step < a.maxSteps; step++ {
 		a.logf("\n=== Шаг %d ===\n", step+1)
 
-		prompt := reactrag.BuildPrompt(question, scratchpad, a.toolList)
+		prompt := reactrag.BuildPrompt(a.instructions, question, scratchpad, a.toolList)
 
 		response, err := llms.GenerateFromSinglePrompt(ctx, a.llm, prompt,
 			// Останавливаемся на "Observation:", чтобы модель не дописывала

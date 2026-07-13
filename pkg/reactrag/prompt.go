@@ -7,10 +7,18 @@ import (
 	"github.com/tmc/langchaingo/tools"
 )
 
-// reactTemplate — ReAct-промпт (перенос buildPrompt из react_agent_example).
-// Ключевые слова английские — под них заточен regex-парсер в agent.go.
-const reactTemplate = `You are a helpful assistant that answers questions about an internal knowledge base.
+// DefaultInstructions — настраиваемая «шапка» ReAct-промпта: роль агента и
+// правила поведения. Именно её можно переопределить своим текстом (см.
+// BuildPrompt). Формат ниже (Thought/Action/Observation) переопределять нельзя —
+// под него заточен regex-парсер в protocol.go.
+const DefaultInstructions = `You are a helpful assistant that answers questions about an internal knowledge base.
 You solve problems step by step and rely on tools to gather facts instead of guessing.
+If the knowledge base does not contain the answer, say so honestly in the Final Answer instead of making facts up.`
+
+// reactTemplate — ReAct-промпт (перенос buildPrompt из react_agent_example).
+// Первый %s — инструкции (кастомизируемая шапка), дальше идёт фиксированный
+// формат. Ключевые слова английские — под них заточен regex-парсер в protocol.go.
+const reactTemplate = `%s
 
 You have access to the following tools:
 %s
@@ -26,15 +34,19 @@ Observation: the result of the action
 Thought: I now know the final answer
 Final Answer: the final answer to the original input question
 
-If the knowledge base does not contain the answer, say so honestly in the Final Answer instead of making facts up.
-
 Begin!
 
 Question: %s`
 
-// BuildPrompt собирает полный ReAct-промпт: шаблон + описания инструментов +
+// BuildPrompt собирает полный ReAct-промпт: инструкции + описания инструментов +
 // вопрос + накопленный scratchpad (история Thought/Action/Observation).
-func BuildPrompt(question, scratchpad string, agentTools []tools.Tool) string {
+// Если instructions пустой, подставляется DefaultInstructions — так вызывающий
+// код может передать свою «шапку», не трогая фиксированный ReAct-формат.
+func BuildPrompt(instructions, question, scratchpad string, agentTools []tools.Tool) string {
+	if strings.TrimSpace(instructions) == "" {
+		instructions = DefaultInstructions
+	}
+
 	names := make([]string, 0, len(agentTools))
 	descs := make([]string, 0, len(agentTools))
 	for _, t := range agentTools {
@@ -43,6 +55,7 @@ func BuildPrompt(question, scratchpad string, agentTools []tools.Tool) string {
 	}
 
 	prompt := fmt.Sprintf(reactTemplate,
+		instructions,
 		strings.Join(descs, "\n"),
 		strings.Join(names, ", "),
 		question)
